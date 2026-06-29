@@ -1,109 +1,136 @@
-# #TWSThreeTierAppChallenge
+# 🏛️ 3-Tier Application on AWS
 
-## Overview
-This repository hosts the `#TWSThreeTierAppChallenge` for the TWS community. 
-The challenge involves deploying a Three-Tier Web Application using ReactJS, NodeJS, and MongoDB, with deployment on AWS EKS. Participants are encouraged to deploy the application, add creative enhancements, and submit a Pull Request (PR). Merged PRs will earn exciting prizes!
+> A cloud-native 3-tier web application deployed on AWS — demonstrating clean separation of presentation, application, and data layers, with all infrastructure provisioned as code via Terraform and deployed through an automated CI/CD pipeline.
 
-**Get The Challenge here**
-
-[![YouTube Video](https://img.youtube.com/vi/tvWQRTbMS1g/maxresdefault.jpg)](https://youtu.be/tvWQRTbMS1g?si=eki-boMemxr4PU7-)
-
-## Prerequisites
-- Basic knowledge of Docker, and AWS services.
-- An AWS account with necessary permissions.
-
-## Challenge Steps
-
-### Step 1: IAM Configuration
-- Create a user `eks-admin` with `AdministratorAccess`.
-- Generate Security Credentials: Access Key and Secret Access Key.
-
-### Step 2: EC2 Setup
-- Launch an Ubuntu instance in your favourite region (eg. region `us-west-2`).
-- SSH into the instance from your local machine.
-
-### Step 3: Install AWS CLI v2
-``` shell
-curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-sudo apt install unzip
-unzip awscliv2.zip
-sudo ./aws/install -i /usr/local/aws-cli -b /usr/local/bin --update
-aws configure
-```
-
-### Step 4: Install Docker
-``` shell
-sudo apt-get update
-sudo apt install docker.io
-docker ps
-sudo chown $USER /var/run/docker.sock
-```
-
-### Step 5: Install kubectl
-``` shell
-curl -o kubectl https://amazon-eks.s3.us-west-2.amazonaws.com/1.19.6/2021-01-05/bin/linux/amd64/kubectl
-chmod +x ./kubectl
-sudo mv ./kubectl /usr/local/bin
-kubectl version --short --client
-```
-
-### Step 6: Install eksctl
-``` shell
-curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
-sudo mv /tmp/eksctl /usr/local/bin
-eksctl version
-```
-
-### Step 7: Setup EKS Cluster
-``` shell
-eksctl create cluster --name three-tier-cluster --region us-west-2 --node-type t2.medium --nodes-min 2 --nodes-max 2
-aws eks update-kubeconfig --region us-west-2 --name three-tier-cluster
-kubectl get nodes
-```
-
-### Step 8: Run Manifests
-``` shell
-kubectl create namespace workshop
-kubectl config set-context --current --namespace workshop
-kubectl apply -f .
-kubectl delete -f .
-```
-
-### Step 9: Install AWS Load Balancer
-``` shell
-curl -O https://raw.githubusercontent.com/kubernetes-sigs/aws-load-balancer-controller/v2.5.4/docs/install/iam_policy.json
-aws iam create-policy --policy-name AWSLoadBalancerControllerIAMPolicy --policy-document file://iam_policy.json
-eksctl utils associate-iam-oidc-provider --region=us-west-2 --cluster=three-tier-cluster --approve
-eksctl create iamserviceaccount --cluster=three-tier-cluster --namespace=kube-system --name=aws-load-balancer-controller --role-name AmazonEKSLoadBalancerControllerRole --attach-policy-arn=arn:aws:iam::626072240565:policy/AWSLoadBalancerControllerIAMPolicy --approve --region=us-west-2
-```
-
-### Step 10: Deploy AWS Load Balancer Controller
-``` shell
-sudo snap install helm --classic
-helm repo add eks https://aws.github.io/eks-charts
-helm repo update eks
-helm install aws-load-balancer-controller eks/aws-load-balancer-controller -n kube-system --set clusterName=my-cluster --set serviceAccount.create=false --set serviceAccount.name=aws-load-balancer-controller
-kubectl get deployment -n kube-system aws-load-balancer-controller
-kubectl apply -f full_stack_lb.yaml
-```
-
-### Cleanup
-- To delete the EKS cluster:
-``` shell
-eksctl delete cluster --name three-tier-cluster --region us-west-2
-```
-
-## Contribution Guidelines
-- Fork the repository and create your feature branch.
-- Deploy the application, adding your creative enhancements.
-- Ensure your code adheres to the project's style and contribution guidelines.
-- Submit a Pull Request with a detailed description of your changes.
-
-## Rewards
-- Successful PR merges will be eligible for exciting prizes!
-
-## Support
-For any queries or issues, please open an issue in the repository.
+Built to reflect real patterns used in production environments across financial services and e-commerce platforms.
 
 ---
-Happy Learning! 🚀👨‍💻👩‍💻
+
+## 🏗️ Architecture
+
+```
+                        ┌─────────────────────────────────────────┐
+                        │              CloudFront CDN              │
+                        │         (Global edge caching)            │
+                        └───────────────────┬─────────────────────┘
+                                            │
+                        ┌───────────────────▼─────────────────────┐
+                        │          Application Load Balancer        │
+                        │      (SSL termination, path routing)      │
+                        └──────────┬────────────────┬─────────────┘
+                                   │                │
+              ┌────────────────────▼──┐    ┌────────▼──────────────────┐
+              │   ECS Fargate Tasks   │    │      S3 Static Assets      │
+              │   (Application Layer) │    │   (Frontend / JS / CSS)    │
+              │   Auto Scaling Group  │    └───────────────────────────┘
+              └────────────┬──────────┘
+                           │
+              ┌────────────▼──────────────────────────────────────────┐
+              │                    Data Layer                          │
+              │   ┌─────────────────┐    ┌────────────────────────┐   │
+              │   │  RDS PostgreSQL  │    │  ElastiCache (Redis)   │   │
+              │   │   (Multi-AZ)    │    │    (Session cache)     │   │
+              │   └─────────────────┘    └────────────────────────┘   │
+              └───────────────────────────────────────────────────────┘
+
+VPC: Public subnets (ALB) → Private subnets (App) → Isolated subnets (DB)
+```
+
+---
+
+## ☁️ AWS Services
+
+| Layer | Service | Purpose |
+|-------|---------|---------|
+| Edge | CloudFront | Global CDN, SSL offloading, WAF integration |
+| Frontend | S3 | Static asset delivery |
+| Load Balancing | ALB | Path-based routing, health checks, SSL termination |
+| Application | ECS Fargate | Serverless containers, no EC2 management |
+| Auto Scaling | Application Auto Scaling | Scale tasks on CPU/memory/request count |
+| Database | RDS PostgreSQL (Multi-AZ) | Transactional data, automated failover |
+| Caching | ElastiCache Redis | Session management, query caching |
+| Secrets | AWS Secrets Manager | DB credentials with automated rotation |
+| Networking | VPC, NAT Gateway | Public/private/isolated subnet architecture |
+| Security | WAF, Security Groups, IAM | Defence in depth |
+| Monitoring | CloudWatch, Container Insights | Logs, metrics, alarms |
+
+---
+
+## 🔒 Security Design
+
+- **No public database access** — RDS in isolated subnet, no internet gateway route
+- **Least-privilege IAM** — ECS task roles scoped to minimum required permissions
+- **Secrets Manager rotation** — DB credentials rotate automatically, no hardcoded passwords
+- **WAF rules** — SQL injection, XSS, rate limiting at the edge
+- **VPC Flow Logs** — all traffic logged to S3 for audit
+- **Encryption everywhere** — RDS encrypted at rest (KMS), S3 SSE, ALB SSL/TLS
+
+---
+
+## 📁 Repository Structure
+
+```
+├── terraform/
+│   ├── modules/
+│   │   ├── vpc/              # VPC, subnets, routing, NAT Gateway
+│   │   ├── alb/              # Application Load Balancer + target groups
+│   │   ├── ecs/              # ECS cluster, service, task definition
+│   │   ├── rds/              # RDS PostgreSQL Multi-AZ
+│   │   ├── elasticache/      # Redis cluster
+│   │   ├── cloudfront/       # CloudFront distribution + S3 origin
+│   │   ├── waf/              # WAF web ACL
+│   │   └── iam/              # Task execution + task roles
+│   └── environments/
+│       ├── dev/
+│       └── production/
+├── app/                      # Application source code
+│   ├── frontend/             # Static assets (JS, CSS, HTML)
+│   └── backend/              # API service
+├── docker/
+│   └── Dockerfile            # Multi-stage build, non-root user, minimal image
+└── .github/
+    └── workflows/
+        ├── build-scan.yml    # Docker build + Trivy scan
+        └── deploy.yml        # Terraform plan/apply + ECS deploy
+```
+
+---
+
+## 🚀 Deployment
+
+```bash
+# Provision infrastructure
+cd terraform/environments/production
+terraform init
+terraform plan -out=tfplan
+terraform apply tfplan
+
+# Build and push container
+docker build -t my-app:latest .
+docker tag my-app:latest <account>.dkr.ecr.<region>.amazonaws.com/my-app:latest
+aws ecr get-login-password | docker login --username AWS --password-stdin <ecr-url>
+docker push <account>.dkr.ecr.<region>.amazonaws.com/my-app:latest
+
+# Deploy to ECS (handled by GitHub Actions pipeline)
+aws ecs update-service --cluster my-cluster --service my-service --force-new-deployment
+```
+
+---
+
+## 🛠️ Tech Stack
+
+![Terraform](https://img.shields.io/badge/Terraform-7B42BC?style=flat&logo=terraform&logoColor=white)
+![AWS](https://img.shields.io/badge/AWS-FF9900?style=flat&logo=amazon-aws&logoColor=white)
+![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white)
+![JavaScript](https://img.shields.io/badge/JavaScript-F7DF1E?style=flat&logo=javascript&logoColor=black)
+![PostgreSQL](https://img.shields.io/badge/PostgreSQL-316192?style=flat&logo=postgresql&logoColor=white)
+![Redis](https://img.shields.io/badge/Redis-DC382D?style=flat&logo=redis&logoColor=white)
+![GitHub Actions](https://img.shields.io/badge/GitHub_Actions-2088FF?style=flat&logo=github-actions&logoColor=white)
+
+---
+
+## 📖 Related
+
+- [Mastering_AWS_Terraform](https://github.com/SaiJithendraGonji/Mastering_AWS_Terraform) — Terraform modules used here
+- [ENDTOEND_DEVSECOPS](https://github.com/SaiJithendraGonji/ENDTOEND_DEVSECOPS) — Security pipeline that scans this application
+- [HELM-Charts](https://github.com/SaiJithendraGonji/HELM-Charts) — Kubernetes alternative deployment for this app
